@@ -2,6 +2,12 @@ import yfinance as yf
 import pandas as pd
 import requests
 import config
+from dotenv import load_dotenv
+import os
+
+load_dotenv()  # Load environment variables from .env file
+
+API_KEY_NEWS = os.getenv("API_KEY_NEWS")
 
 def fetch_stock_data(ticker, start_date, end_date):
     """

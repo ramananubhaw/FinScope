@@ -1,6 +1,12 @@
 import google.generativeai as genai
 import config
 import json
+import os
+from dotenv import load_dotenv
+
+load_dotenv()  # Load environment variables from .env file
+
+API_KEY_GEMINI = os.getenv("API_KEY_GEMINI")
 
 class LLMAgent:
     """
