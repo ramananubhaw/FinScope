@@ -4,6 +4,17 @@ from agents.lstm_agent import LSTMAgent
 from agents.llm_agent import LLMAgent
 from agents.master_agent import MasterAgent
 import pandas as pd
+from dotenv import load_dotenv
+import os
+
+load_dotenv()  # Load environment variables from .env file
+
+TICKER = os.getenv("TICKER")
+START_DATE = os.getenv("START_DATE")
+END_DATE = os.getenv("END_DATE")
+LSTM_SEQUENCE_LENGTH = int(os.getenv("LSTM_SEQUENCE_LENGTH"))
+LSTM_MODEL_PATH = os.getenv("LSTM_MODEL_PATH")
+ENABLE_TRAINING = os.getenv("ENABLE_TRAINING") == 'True'
 
 def run():
     """

@@ -1,9 +1,13 @@
 import numpy as np
 import pandas as pd
 from sklearn.preprocessing import MinMaxScaler
+import tensorflow as tf
 from tensorflow.keras.models import Sequential, load_model
 from tensorflow.keras.layers import LSTM, Dense, Dropout
+# from dotenv import load_dotenv
 import os
+
+# load_dotenv()  # Load environment variables from .env file
 
 class LSTMAgent:
     """
