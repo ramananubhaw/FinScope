@@ -31,7 +31,7 @@ class DataFetcherAgent:
         """
         print(f"Fetching stock data for {ticker} from {start_date} to {end_date}...")
         try:
-            stock_data = yf.download(ticker, start=start_date, end=end_date, impersonate=False, progress=False)
+            stock_data = yf.download(ticker, start=start_date, end=end_date)
             if stock_data.empty:
                 print(f"No stock data found for {ticker}. Check if the ticker is valid.")
                 return None

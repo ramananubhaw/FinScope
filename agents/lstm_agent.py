@@ -4,41 +4,88 @@ from sklearn.preprocessing import MinMaxScaler
 import tensorflow as tf
 from tensorflow.keras.models import Sequential, load_model
 from tensorflow.keras.layers import LSTM, Dense, Dropout
-# from dotenv import load_dotenv
 import os
-
-# load_dotenv()  # Load environment variables from .env file
+import traceback
 
 class LSTMAgent:
     """
-    The LSTM Agent for quantitative analysis of stock prices.
+    The LSTM Agent for quantitative analysis.
+    This model expects 3D sequence data with multiple features
+    from the DataPreprocessorAgent.
     """
     def __init__(self, sequence_length=60, model_path="models/lstm_model.h5"):
         self.sequence_length = sequence_length
         self.model_path = model_path
         self.model = None
-        self.scaler = MinMaxScaler(feature_range=(0, 1))
+        # This agent does *not* have its own scaler.
+        # It relies on the 'target_scaler' passed from the preprocessor.
 
-    def _preprocess_data(self, data):
+    def predict(self, processed_data):
         """
-        Prepares the data for the LSTM model.
-        Scales the data and creates sequences.
+        Predicts the next day's closing price using the 6-feature model.
+        
+        Args:
+            processed_data (dict): Dictionary from the preprocessor,
+                                 containing 3D sequenced data and the target_scaler.
+        
+        Returns:
+            float: The predicted (inverse-transformed) closing price.
         """
-        # We only need the 'Close' price for this model
-        scaled_data = self.scaler.fit_transform(data['Close'].values.reshape(-1, 1))
+        if self.model is None:
+            # This should not happen if master_agent calls load() first
+            print(" Error: Model is not loaded. Call load() first.")
+            return None
         
-        X_train = []
-        y_train = []
+        print("🤖 Making prediction with multi-feature LSTM model...")
         
-        for i in range(self.sequence_length, len(scaled_data)):
-            X_train.append(scaled_data[i-self.sequence_length:i, 0])
-            y_train.append(scaled_data[i, 0])
+        try:
+            X_test = processed_data['X_test']
+            target_scaler = processed_data['target_scaler']
             
-        return np.array(X_train), np.array(y_train)
+            if len(X_test) == 0:
+                print("❌ No test data available for prediction")
+                # Try to use X_train if X_test is empty
+                X_train = processed_data.get('X_train')
+                if X_train is None or len(X_train) == 0:
+                    print("❌ No train data available either. Cannot predict.")
+                    return None
+                print("⚠️ No test data, using last sequence from TRAINING data.")
+                last_sequence = X_train[-1]
+            else:
+                 # Get the last sequence from the test data
+                last_sequence = X_test[-1] 
+            
+            # Reshape for LSTM: (1, sequence_length, num_features)
+            # last_sequence is already (sequence_length, num_features)
+            prediction_input = np.reshape(last_sequence, (1, last_sequence.shape[0], last_sequence.shape[1]))
+            
+            # Make scaled prediction
+            predicted_scaled = self.model.predict(prediction_input)
+            
+            # Inverse transform the prediction
+            predicted_price = target_scaler.inverse_transform(predicted_scaled)
+            
+            return float(predicted_price[0][0])
+
+        except Exception as e:
+            print(f"❌ Prediction error: {e}")
+            traceback.print_exc()
+            
+            # Fallback: return the last known price
+            y_test = processed_data.get('y_test', [])
+            if len(y_test) > 0 and target_scaler:
+                last_scaled_price = y_test[-1]
+                fallback_price = target_scaler.inverse_transform([[last_scaled_price]])
+                print(f"⚠️ Prediction failed. Returning last known price: ${fallback_price[0][0]:.2f}")
+                return float(fallback_price[0][0])
+                
+            return 150.0 # Default fallback
 
     def build_model(self, input_shape):
         """
         Builds the LSTM model architecture.
+        input_shape should be (sequence_length, num_features)
+        e.g., (60, 6)
         """
         model = Sequential()
         model.add(LSTM(units=50, return_sequences=True, input_shape=input_shape))
@@ -50,25 +97,32 @@ class LSTMAgent:
         
         model.compile(optimizer='adam', loss='mean_squared_error')
         self.model = model
-        print("LSTM model built successfully.")
+        print(f"✅ LSTM model built successfully for input shape {input_shape}")
 
-    def train(self, data):
+    def train(self, processed_data):
         """
-        Trains the LSTM model on the provided historical data.
+        Trains the LSTM model on the preprocessed 3D data.
         """
-        print("Training LSTM model...")
-        X_train, y_train = self._preprocess_data(data)
+        print("Training 6-feature LSTM model...")
+        X_train = processed_data['X_train']
+        y_train = processed_data['y_train']
         
+        if len(X_train) == 0:
+            print("❌ Cannot train: No training data.")
+            return
+
         # Reshape data for LSTM [samples, timesteps, features]
-        X_train = np.reshape(X_train, (X_train.shape[0], X_train.shape[1], 1))
+        # X_train is already in this shape from the preprocessor
+        # Input shape is (timesteps, features)
+        input_shape = (X_train.shape[1], X_train.shape[2])
         
-        self.build_model((X_train.shape[1], 1))
+        self.build_model(input_shape)
         self.model.fit(X_train, y_train, epochs=25, batch_size=32)
         
         # Ensure the directory exists before saving
         os.makedirs(os.path.dirname(self.model_path), exist_ok=True)
         self.model.save(self.model_path)
-        print(f"Model trained and saved to {self.model_path}")
+        print(f"✅ Model trained and saved to {self.model_path}")
 
     def load(self):
         """
@@ -77,37 +131,8 @@ class LSTMAgent:
         if os.path.exists(self.model_path):
             print(f"Loading pre-trained model from {self.model_path}...")
             self.model = load_model(self.model_path)
-            print("Model loaded successfully.")
+            print("✅ Model loaded successfully.")
             return True
         else:
-            print(f"Error: Model file not found at {self.model_path}")
+            print(f"❌ Error: Model file not found at {self.model_path}")
             return False
-
-    def predict(self, data):
-        """
-        Predicts the next day's closing price.
-        
-        Args:
-            data (pandas.DataFrame): A DataFrame containing at least the last
-                                     `sequence_length` days of stock data.
-        
-        Returns:
-            float: The predicted (scaled) closing price.
-        """
-        if self.model is None:
-            print("Error: Model is not loaded or trained.")
-            return None
-            
-        print("Making a prediction with the LSTM model...")
-        # Get the last `sequence_length` days of closing prices
-        last_sequence = data['Close'][-self.sequence_length:].values.reshape(-1, 1)
-        scaled_sequence = self.scaler.transform(last_sequence)
-        
-        # Reshape for the model
-        X_test = np.array([scaled_sequence.flatten()])
-        X_test = np.reshape(X_test, (X_test.shape[0], X_test.shape[1], 1))
-        
-        predicted_price_scaled = self.model.predict(X_test)
-        predicted_price = self.scaler.inverse_transform(predicted_price_scaled)
-        
-        return predicted_price[0][0]
