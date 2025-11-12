@@ -1,7 +1,7 @@
 import pandas as pd
 import requests
 import config
-from datetime import datetime
+from datetime import datetime, timedelta
 
 
 class DataFetcherAgent:
@@ -125,6 +125,85 @@ class DataFetcherAgent:
             print(f"Error fetching news: {e}")
             return []
 
+    def fetch_alpha_vantage_sentiment(self, ticker: str, start_date_str: str, end_date_str: str, limit: int = 200):
+        """
+        Fetches news and sentiment data for a given ticker over a specified date range 
+        using the Alpha Vantage News & Sentiment endpoint.
+        """
+        print(f"\nFetching Alpha Vantage sentiment for '{ticker}' from {start_date_str} to {end_date_str}...")
+
+        # 1. Check for API Key
+        if not self.alpha_key: # Assuming you have an 'self.av_api_key' attribute
+            print("Missing Alpha Vantage API key. Skipping sentiment fetching.")
+            return []
+
+        # 2. Format Dates for AV (YYYYMMDDTHHMMSS)
+        # AV typically requires a precise timestamp for time_from and time_to
+        end_date_obj = datetime.now()
+        start_date_obj = end_date_obj - timedelta(days=30)
+        
+        start_date_str = start_date_obj.strftime('%Y%m%d')
+        end_date_str = end_date_obj.strftime('%Y%m%d')
+        
+        time_from = f"{start_date_str}T0000"
+        time_to = f"{end_date_str}T0000"
+        # time_from = f"{start_date_str.replace('-', '')}T0000"
+        # time_to = f"{end_date_str.replace('-', '')}T0000"
+
+        # 3. Construct the AV URL
+        url = "https://www.alphavantage.co/query"
+
+        params = {
+            "function": "NEWS_SENTIMENT",
+            "tickers": ticker,
+            "topics": "financial_markets",
+            "time_from": time_from,
+            "time_to": time_to,
+            "limit": limit,
+            "apikey": self.alpha_key
+        }
+
+        try:
+            response = self.news_session.get(url, params=params, timeout=15)
+            response.raise_for_status()
+            data = response.json()
+            print(data)
+
+            # Check for error messages returned by AV
+            if 'Error Message' in data:
+                print(f"Alpha Vantage API Error: {data['Error Message']}")
+                return []
+            
+            # Articles are under the 'feed' key
+            articles = data.get("feed", [])
+            print(f"Found {len(articles)} relevant news articles in the range.")
+
+            # 4. Extract Relevant Data, including Sentiment Score
+            sentiment_data = []
+            for a in articles:
+                # Alpha Vantage returns sentiment scores per ticker mentioned in the article
+                ticker_sentiment = a.get("ticker_sentiment", [])
+                
+                # Find the sentiment data specifically for the requested ticker
+                target_sentiment = next((ts for ts in ticker_sentiment if ts.get("ticker") == ticker), None)
+
+                if target_sentiment:
+                    sentiment_data.append({
+                        "title": a.get("title"),
+                        "time_published": a.get("time_published"), # Timestamp in AV format (YYYYMMDDTHHMMSS)
+                        "source": a.get("source"),
+                        # Key Extraction: The score your LSTM needs
+                        "sentiment_score": float(target_sentiment.get("ticker_sentiment_score", 0.0)),
+                        "relevance_score": float(target_sentiment.get("ticker_sentiment_label", 0.0)),
+                    })
+            
+            return sentiment_data
+
+        except Exception as e:
+            print(f"Error fetching Alpha Vantage news and sentiment: {e}")
+            return []
+
+
     def run(self, ticker: str = None, start_date: str = None, end_date: str = None):
         ticker = ticker or config.TICKER
         start_date = start_date or config.START_DATE
@@ -136,7 +215,14 @@ class DataFetcherAgent:
             stock_data.to_csv("stock_data.csv")
             print("Stock data saved to stock_data.csv")
 
-        news_data = self.fetch_news_data(ticker)
+        news_data = self.fetch_news_data(ticker, max_articles=10)
+        # print(news_data)
+
+        # news_data = []
+
+        # av_news_data = self.fetch_alpha_vantage_sentiment(ticker, start_date, end_date, limit=150)
+        # print(av_news_data)
+
 
         return {
             "stock_data": stock_data,

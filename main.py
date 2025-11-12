@@ -17,7 +17,7 @@ def run():
     print("===================================\n")
 
     # --- Initialize Master Agent ---
-    master_agent = MasterAgent()
+    master_agent = MasterAgent(use_sentiment=True)
 
     # --- Run Full Workflow ---
     try:
@@ -29,7 +29,7 @@ def run():
 
         if predicted_price is not None:
             print("\n===================================")
-            print(f"Predicted Stock Price for {config.TICKER}: ${predicted_price:.2f}")
+            print(f"Predicted Stock Price for {config.TICKER}: ${predicted_price['prediction']:.2f}")
             print("===================================\n")
         else:
             print("\nPrediction failed. Please check logs or model settings.\n")

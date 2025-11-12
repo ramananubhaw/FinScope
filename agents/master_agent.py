@@ -36,6 +36,8 @@ class MasterAgent:
     def run(self, stock_symbol: str, start_date: str, end_date: str):
         print(f"\nStarting FinScope workflow for {stock_symbol}...")
 
+        self.lstm.model_path = f"models/{stock_symbol}_model.keras"
+        self.lstm.scaler_path = f"models/{stock_symbol}_scaler.pkl"
         # ---------------------------------------------------------
         # 1) FETCH DATA
         # ---------------------------------------------------------
@@ -56,6 +58,8 @@ class MasterAgent:
         else:
             print("Skipping sentiment feature.")
             stock_df["Sentiment"] = 0.0   # keeps schema consistent
+
+        # print(stock_df)
 
         # ---------------------------------------------------------
         # 3) TRAIN OR LOAD MODEL
@@ -122,29 +126,23 @@ class MasterAgent:
         return result
 
     def _normalize_sentiment(self, raw):
-        if raw is None:
+        """
+        Converts the LLM's categorical text output ('Positive', 'Negative', 'Neutral') 
+        into a standardized numerical score (-1.0 to +1.0).
+        """
+        if not raw:
             return 0.0
 
-        score = 0.0
-        label = ""
+        # Ensure input is treated as a string and converted to lowercase
+        label = str(raw).strip().lower()
 
-        if isinstance(raw, dict):
-            score = raw.get("score") or raw.get("confidence") or 0.0
-            label = str(raw.get("label") or raw.get("sentiment") or "").lower()
-        else:
-            label = str(raw).lower()
-
-        # basic mapping
-        if "pos" in label or "bull" in label:
-            score = 0.8
-        elif "neg" in label or "bear" in label:
-            score = -0.8
-
-        # normalize 0–1 to -1–1
-        if 0 <= score <= 1:
-            score = score * 2 - 1
-
-        return float(np.clip(score, -1, 1))
+        # Direct mapping based on your LLM's output
+        if "positive" in label:
+            return 1.0
+        elif "negative" in label:
+            return -1.0
+        else: # Catches "Neutral" and any unexpected output
+            return 0.0
 
     def _attach_daily_sentiment(self, df_prices, sentiment):
         df = df_prices.copy()
